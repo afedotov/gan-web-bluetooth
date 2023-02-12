@@ -1,0 +1,46 @@
+{
+  "name": "gan-web-bluetooth",
+  "version": "1.0.0",
+  "description": "Library for interaction with GAN Smart Timer using Web Bluetooth API",
+  "type": "module",
+  "private": false,
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": "./dist/esm/index.js"
+  },
+  "scripts": {
+    "clean": "rm -rf dist/",
+    "compile": "tsc -b tsconfig.esm.json tsconfig.types.json",
+    "build": "npm run clean && npm run compile"
+  },
+  "keywords": [
+    "GAN",
+    "GANCUBE",
+    "Timer",
+    "GAN Smart Timer",
+    "Bluetooth",
+    "Web Bluetooth",
+    "Speedcubing"
+  ],
+  "author": "Andy Fedotov <andy.fedotov@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/afedotov/gan-web-bluetooth.git"
+  },
+  "dependencies": {
+    "@types/web-bluetooth": "^0.0.16",
+    "rxjs": ">= 6",
+    "tslib": ">= 2.1"
+  },
+  "devDependencies": {
+    "typescript": "^4.9.5"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE.txt",
+    "package.json"
+  ]
+}

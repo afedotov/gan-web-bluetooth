@@ -1,0 +1,25 @@
+
+# Generated
+node_modules
+/dist
+
+# IDE, Editors, Local configs
+.vscode/
+.history/
+*~
+*.sw?
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.npmrc
+
+# Common
+*.log
+*.bak
+*.tmp
+.DS_Store
+Thumbs.db
