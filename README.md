@@ -4,8 +4,13 @@ This library is designed for easy interaction with GAN Smart Timer on the platfo
 
 Nature of the GAN Smart Timer is event-driven, so this library is depends on [RxJS](https://rxjs.dev/) and provide [Observable](https://rxjs.dev/guide/observable) where you can subscribe for timer events.
 
-#### Example usage:
+#### Usage:
 
+Sample application using this library can be found here:
+- https://github.com/afedotov/gan-timer-display
+- Live version: [GAN Timer Display](https://afedotov.github.io/gan-timer-display/)
+
+TypeScript code:
 ```typescript
 import { connectGanTimer, GanTimerState } from 'gan-web-bluetooth';
 
