@@ -45,11 +45,8 @@ interface GanTimerConnection {
     disconnect(): void;
 }
 
-// Construct time object from raw data
-function makeTimerTime(data: DataView, offset: number): GanTimerTime {
-    var min = data.getUint8(offset);
-    var sec = data.getUint8(offset + 1);
-    var msec = data.getUint16(offset + 2, true);
+// Construct time object
+function makeTime(min: number, sec: number, msec: number): GanTimerTime {
     return {
         minutes: min,
         seconds: sec,
@@ -57,6 +54,22 @@ function makeTimerTime(data: DataView, offset: number): GanTimerTime {
         asTimestamp: 60000 * min + 1000 * sec + msec,
         toString: () => `${min.toString(10)}:${sec.toString(10).padStart(2, '0')}.${msec.toString(10).padStart(2, '0')}`
     }
+}
+
+// Construct time object from raw event data
+function makeTimeFromRaw(data: DataView, offset: number): GanTimerTime {
+    var min = data.getUint8(offset);
+    var sec = data.getUint8(offset + 1);
+    var msec = data.getUint16(offset + 2, true);
+    return makeTime(min, sec, msec);
+}
+
+// Construct time object from milliseconds timestamp
+function makeTimeFromTimestamp(timestamp: number): GanTimerTime {
+    var min = Math.trunc(timestamp / 60000);
+    var sec = Math.trunc(timestamp % 60000 / 1000);
+    var msec = Math.trunc(timestamp % 1000);
+    return makeTime(min, sec, msec);
 }
 
 // Calculate ArrayBuffer checksum using CRC-16/CCIT-FALSE algorithm variation
@@ -92,7 +105,7 @@ function buildTimerEvent(data: DataView): GanTimerEvent {
         state: data.getUint8(3)
     };
     if (evt.state == GanTimerState.STOPPED) {
-        evt.recordedTime = makeTimerTime(data, 4);
+        evt.recordedTime = makeTimeFromRaw(data, 4);
     }
     return evt;
 }
@@ -134,8 +147,8 @@ async function connectGanTimer(): Promise<GanTimerConnection> {
         var data = await timeCharacteristic.readValue();
         return data?.byteLength >= 16 ?
             Promise.resolve({
-                displayTime: makeTimerTime(data, 0),
-                previousTimes: [makeTimerTime(data, 4), makeTimerTime(data, 8), makeTimerTime(data, 12)]
+                displayTime: makeTimeFromRaw(data, 0),
+                previousTimes: [makeTimeFromRaw(data, 4), makeTimeFromRaw(data, 8), makeTimeFromRaw(data, 12)]
             }) : Promise.reject("Invalid time characteristic value received from Timer");
     }
 
@@ -165,4 +178,13 @@ async function connectGanTimer(): Promise<GanTimerConnection> {
 
 }
 
-export { GanTimerConnection, GanTimerEvent, GanTimerState, GanTimerTime, GanTimerRecordedTimes, connectGanTimer }
+export {
+    connectGanTimer,
+    makeTime,
+    makeTimeFromTimestamp,
+    GanTimerConnection,
+    GanTimerEvent,
+    GanTimerState,
+    GanTimerTime,
+    GanTimerRecordedTimes
+}
