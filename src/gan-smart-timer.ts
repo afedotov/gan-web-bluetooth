@@ -52,7 +52,7 @@ function makeTime(min: number, sec: number, msec: number): GanTimerTime {
         seconds: sec,
         milliseconds: msec,
         asTimestamp: 60000 * min + 1000 * sec + msec,
-        toString: () => `${min.toString(10)}:${sec.toString(10).padStart(2, '0')}.${msec.toString(10).padStart(2, '0')}`
+        toString: () => `${min.toString(10)}:${sec.toString(10).padStart(2, '0')}.${msec.toString(10).padStart(3, '0')}`
     }
 }
 
