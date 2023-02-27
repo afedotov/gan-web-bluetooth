@@ -2,16 +2,20 @@
   "name": "gan-web-bluetooth",
   "version": "1.0.2",
   "description": "Library for interaction with GAN Smart Timer using Web Bluetooth API",
-  "type": "module",
   "private": false,
   "types": "./dist/types/index.d.ts",
+  "module": "./dist/esm/index.mjs",
+  "main": "./dist/cjs/index.cjs",
   "exports": {
-    ".": "./dist/esm/index.js"
+    "types": "./dist/types/index.d.ts",
+    "import": "./dist/esm/index.mjs",
+    "require": "./dist/cjs/index.cjs"
   },
   "scripts": {
     "clean": "rm -rf dist/",
-    "compile": "tsc -b tsconfig.esm.json tsconfig.types.json",
-    "build": "npm run clean && npm run compile"
+    "compile:bundles": "rollup -c",
+    "compile:types": "tsc -p tsconfig.types.json",
+    "build": "npm run clean && npm run compile:types && npm run compile:bundles"
   },
   "keywords": [
     "GAN",
@@ -34,6 +38,8 @@
     "tslib": ">= 2.1"
   },
   "devDependencies": {
+    "@rollup/plugin-typescript": "^11.0.0",
+    "rollup": "^3.17.3",
     "typescript": "^4.9.5"
   },
   "files": [
