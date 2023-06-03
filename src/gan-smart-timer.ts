@@ -115,7 +115,11 @@ async function connectGanTimer(): Promise<GanTimerConnection> {
     // Request user for the bluetooth device (popup selection dialog)
     var device = await navigator.bluetooth.requestDevice(
         {
-            filters: [{ namePrefix: "GAN" }],
+            filters: [
+                { namePrefix: "GAN" },
+                { namePrefix: "gan" },
+                { namePrefix: "Gan" }
+            ],
             optionalServices: [GAN_TIMER_SERVICE]
         }
     );
