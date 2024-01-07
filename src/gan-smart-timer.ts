@@ -6,18 +6,31 @@ const GAN_TIMER_SERVICE: string = '0000fff0-0000-1000-8000-00805f9b34fb';
 const GAN_TIMER_TIME_CHARACTERISTIC: string = '0000fff2-0000-1000-8000-00805f9b34fb';
 const GAN_TIMER_STATE_CHARACTERISTIC: string = '0000fff5-0000-1000-8000-00805f9b34fb';
 
+/**
+ * GAN Smart Timer events/states
+ */
 enum GanTimerState {
+    /** Fired when timer is disconnected from bluetooth */
     DISCONNECT = 0,
+    /** Grace delay is expired and timer is ready to start */
     GET_SET = 1,
+    /** Hands removed from the timer before grace delay expired */
     HANDS_OFF = 2,
+    /** Timer is running */
     RUNNING = 3,
+    /** Timer is stopped, this event includes recorded time */
     STOPPED = 4,
+    /** Timer is reset and idle */
     IDLE = 5,
+    /** Hands are placed on the timer */
     HANDS_ON = 6,
+    /** Timer moves to this state immediately after STOPPED */
     FINISHED = 7
 }
 
-// Representation of time value
+/**
+ * Representation of time value
+ */
 interface GanTimerTime {
     readonly minutes: number;
     readonly seconds: number;
@@ -26,26 +39,39 @@ interface GanTimerTime {
     toString(): string;
 }
 
-// Timer state event
+/**
+ * Timer state event
+ */
 interface GanTimerEvent {
+    /** Current timer state */
     state: GanTimerState;
+    /** Recorder time value in case of STOPPED event */
     recordedTime?: GanTimerTime;
 }
 
-// Representation of recorded in timer memory time values
+/**
+ * Representation of recorded in timer memory time values
+ */
 interface GanTimerRecordedTimes {
     displayTime: GanTimerTime;
     previousTimes: [GanTimerTime, GanTimerTime, GanTimerTime];
 }
 
-// Connection object representing common timer API
+/**
+ * GAN Timer connection object representing connection API and state
+ */
 interface GanTimerConnection {
+    /** RxJS Subject to subscribe for cube event messages */
     events$: Observable<GanTimerEvent>;
+    /** Retrieve last time values recored by timer */
     getRecordedTimes(): Promise<GanTimerRecordedTimes>;
+    /** Disconnect from timer */
     disconnect(): void;
 }
 
-// Construct time object
+/**
+ * Construct time object
+ */
 function makeTime(min: number, sec: number, msec: number): GanTimerTime {
     return {
         minutes: min,
@@ -56,7 +82,9 @@ function makeTime(min: number, sec: number, msec: number): GanTimerTime {
     }
 }
 
-// Construct time object from raw event data
+/**
+ * Construct time object from raw event data
+ */
 function makeTimeFromRaw(data: DataView, offset: number): GanTimerTime {
     var min = data.getUint8(offset);
     var sec = data.getUint8(offset + 1);
@@ -64,7 +92,9 @@ function makeTimeFromRaw(data: DataView, offset: number): GanTimerTime {
     return makeTime(min, sec, msec);
 }
 
-// Construct time object from milliseconds timestamp
+/**
+ * Construct time object from milliseconds timestamp
+ */
 function makeTimeFromTimestamp(timestamp: number): GanTimerTime {
     var min = Math.trunc(timestamp / 60000);
     var sec = Math.trunc(timestamp % 60000 / 1000);
@@ -72,7 +102,9 @@ function makeTimeFromTimestamp(timestamp: number): GanTimerTime {
     return makeTime(min, sec, msec);
 }
 
-// Calculate ArrayBuffer checksum using CRC-16/CCIT-FALSE algorithm variation
+/**
+ * Calculate ArrayBuffer checksum using CRC-16/CCIT-FALSE algorithm variation
+ */
 function crc16ccit(buff: ArrayBuffer): number {
     var dataView = new DataView(buff);
     var crc: number = 0xFFFF;
@@ -85,7 +117,9 @@ function crc16ccit(buff: ArrayBuffer): number {
     return crc & 0xFFFF;
 }
 
-// Ensure received timer event has valid data: check data magic and CRC
+/**
+ * Ensure received timer event has valid data: check data magic and CRC
+ */
 function validateEventData(data: DataView): boolean {
     try {
         if (data?.byteLength == 0 || data.getUint8(0) != 0xFE) {
@@ -99,7 +133,9 @@ function validateEventData(data: DataView): boolean {
     }
 }
 
-// Construct event object from raw data
+/**
+ * Construct event object from raw data
+ */
 function buildTimerEvent(data: DataView): GanTimerEvent {
     var evt: GanTimerEvent = {
         state: data.getUint8(3)
@@ -110,6 +146,10 @@ function buildTimerEvent(data: DataView): GanTimerEvent {
     return evt;
 }
 
+/**
+ * Initiate new connection with the GAN Smart Timer device
+ * @returns Connection connection object representing connection API and state
+ */
 async function connectGanTimer(): Promise<GanTimerConnection> {
 
     // Request user for the bluetooth device (popup selection dialog)
@@ -156,23 +196,18 @@ async function connectGanTimer(): Promise<GanTimerConnection> {
             }) : Promise.reject("Invalid time characteristic value received from Timer");
     }
 
-    // Handle unexpected disconnection
-    var onTimerDisconnected = () => {
-        device.removeEventListener('gattserverdisconnected', onTimerDisconnected);
-        stateCharacteristic.removeEventListener('characteristicvaluechanged', onStateChanged);
-        eventSubject.next({ state: GanTimerState.DISCONNECT });
-        eventSubject.unsubscribe();
-    }
-    device.addEventListener('gattserverdisconnected', onTimerDisconnected);
-
     // Manual disconnect action
     var disconnectAction = async () => {
-        device.removeEventListener('gattserverdisconnected', onTimerDisconnected);
+        device.removeEventListener('gattserverdisconnected', disconnectAction);
         stateCharacteristic.removeEventListener('characteristicvaluechanged', onStateChanged);
+        await stateCharacteristic.stopNotifications().catch(() => { });
+        eventSubject.next({ state: GanTimerState.DISCONNECT });
         eventSubject.unsubscribe();
-        await stateCharacteristic.stopNotifications();
-        server.disconnect();
+        if (server.connected) {
+            server.disconnect();
+        }
     }
+    device.addEventListener('gattserverdisconnected', disconnectAction);
 
     return {
         events$: eventSubject,
