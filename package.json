@@ -1,6 +1,6 @@
 {
   "name": "gan-web-bluetooth",
-  "version": "1.0.4",
+  "version": "2.0.0",
   "description": "Library for interaction with GAN Smart Timer using Web Bluetooth API",
   "private": false,
   "types": "./dist/types/index.d.ts",
@@ -33,14 +33,15 @@
     "url": "https://github.com/afedotov/gan-web-bluetooth.git"
   },
   "dependencies": {
-    "@types/web-bluetooth": "^0.0.16",
-    "rxjs": ">= 6",
-    "tslib": ">= 2.1"
+    "aes-js": "^3.1.2",
+    "rxjs": ">= 7"
   },
   "devDependencies": {
-    "@rollup/plugin-typescript": "^11.0.0",
-    "rollup": "^3.17.3",
-    "typescript": "^4.9.5"
+    "@types/aes-js": "^3.1.4",
+    "@types/web-bluetooth": "^0.0.20",
+    "@rollup/plugin-typescript": "^11.1.5",
+    "rollup": "^4.9.4",
+    "typescript": "^5.3.3"
   },
   "files": [
     "dist",

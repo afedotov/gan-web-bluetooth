@@ -20,6 +20,7 @@
     "noPropertyAccessFromIndexSignature": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
+    "importHelpers": false,
     "sourceMap": false
   }
 }

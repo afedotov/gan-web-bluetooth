@@ -1,16 +1,23 @@
-## GAN Smart Timer via Web Bluetooth API
+## Use of GAN Smart Timers & Smart Cubes via Web Bluetooth API
 
-This library is designed for easy interaction with GAN Smart Timer on the platforms that support [Web Bluetooth API](https://github.com/WebBluetoothCG/web-bluetooth/blob/main/implementation-status.md).
+This library is designed for easy interaction with GAN Smart Timers and Smart Cubes 
+on the platforms that support [Web Bluetooth API](https://github.com/WebBluetoothCG/web-bluetooth/blob/main/implementation-status.md).
 
-Nature of the GAN Smart Timer is event-driven, so this library is depends on [RxJS](https://rxjs.dev/) and provide [Observable](https://rxjs.dev/guide/observable) where you can subscribe for timer events.
+Nature of the GAN Smart Timer and Smart Cubes is event-driven, so this library is
+depends on [RxJS](https://rxjs.dev/), and library API provide [Observable](https://rxjs.dev/guide/observable) 
+where you can subscribe for events.
 
-#### Usage:
+## GAN Smart Timers:
+
+Supported GAN timer devices:
+- GAN Smart Timer
+- GAN Halo Smart Timer
 
 Sample application using this library can be found here:
 - https://github.com/afedotov/gan-timer-display
 - Live version: [GAN Timer Display](https://afedotov.github.io/gan-timer-display/)
 
-TypeScript code:
+Sample TypeScript code:
 ```typescript
 import { connectGanTimer, GanTimerState } from 'gan-web-bluetooth';
 
@@ -67,3 +74,49 @@ stateDiagram-v2
     STOPPED --> FINISHED
     FINISHED --> IDLE
 ```
+
+## GAN Smart Cubes:
+
+Supported Smart Cube devices:
+- GAN Gen2 protocol smart cubes:
+  - GAN Mini ui FreePlay
+  - GAN12 ui FreePlay
+  - GAN12 ui
+  - GAN356 i Carry S
+  - GAN356 i Carry
+  - GAN356 i 3
+  - Monster Go 3Ai
+- MoYu AI 2023 (this cube uses GAN Gen2 protocol)
+- GAN Gen3 protocol smart cubes:
+  - ~~GAN356 i Carry 2~~ (Work in Progress)
+
+Sample application how to use this library with GAN Smart Cubes can be found here:
+- https://github.com/afedotov/gan-cube-sample
+- Live version: [gan-cube-sample](https://afedotov.github.io/gan-cube-sample/)
+
+Sample TypeScript code:
+```typescript
+import { connectGanCube } from 'gan-web-bluetooth';
+
+var conn = await connectGanCube();
+
+conn.events$.subscribe((event) => {
+    if (event.type == "FACELETS") {
+        console.log("Cube facelets state", event.facelets);
+    } else if (event.type == "MOVE") {
+        console.log("Cube move", event.move);
+    }
+});
+
+await conn.sendCubeCommand({ type: "REQUEST_FACELETS" });
+```
+
+Since internal clock of the most GAN Smart Cubes is not ideally calibrated, they typically introduce 
+noticeable time skew with host device clock. Best practice here is to record timestamps of move events 
+during solve using both clocks - host device and cube. Then apply linear regression algorithm 
+to fit cube timestamp values and get fairly measured elapsed time. This approach is invented 
+and firstly implemented by **Chen Shuang** in the **csTimer**. This library also contains `cubeTimestampLinearFit()` 
+function to accomplish such procedure. You can look into the mentioned sample application code for details, 
+and this [Jupyter notebook](https://github.com/afedotov/scipy-notebooks/blob/main/ts-linregress.ipynb) for visualisation
+of such approach.
+

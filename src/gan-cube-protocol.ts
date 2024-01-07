@@ -1,0 +1,502 @@
+
+import { now, toKociembaFacelets } from './utils';
+import { GanCubeEncrypter } from './gan-cube-encrypter';
+import { Observable, Subject } from 'rxjs';
+
+/** Command for requesting information about GAN Smart Cube hardware  */
+type GanCubeReqHardwareCommand = {
+    type: "REQUEST_HARDWARE";
+};
+
+/** Command for requesting information about current facelets state  */
+type GanCubeReqFaceletsCommand = {
+    type: "REQUEST_FACELETS";
+};
+
+/** Command for requesting information about current battery level  */
+type GanCubeReqBatteryCommand = {
+    type: "REQUEST_BATTERY";
+};
+
+/** Command for resetting GAN Smart Cube internal facelets state to solved state */
+type GanCubeReqResetCommand = {
+    type: "REQUEST_RESET";
+};
+
+/** Command message */
+type GanCubeCommand = GanCubeReqHardwareCommand | GanCubeReqFaceletsCommand | GanCubeReqBatteryCommand | GanCubeReqResetCommand;
+
+/** 
+ * Representation of GAN Smart Cube move
+ */
+type GanCubeMove = {
+    /** Face: 0 - U, 1 - R, F - 2, D = 3, L = 4, B = 5 */
+    face: number;
+    /** Face direction: 0 - CW, 1 - CCW */
+    direction: number;
+    /** Cube move in common string notation, like R' or U2 */
+    move: string;
+    /** Timestamp according to host device clock, null in case if bluetooth event was missed and recovered */
+    localTimestamp: number | null;
+    /** Timestamp according to cube internal clock */
+    cubeTimestamp: number;
+};
+
+/**
+ * Move event
+ */
+type GanCubeMoveEvent = { type: "MOVE" } & GanCubeMove;
+
+/**
+ * Representation of GAN Smart Cube facelets state
+ */
+type GanCubeState = {
+    /** Corner Permutation: 8 elements, values from 0 to 7 */
+    CP: Array<number>;
+    /** Corner Orientation: 8 elements, values from 0 to 3 */
+    CO: Array<number>;
+    /** Edge Permutation: 12 elements, values from 0 to 11 */
+    EP: Array<number>;
+    /** Edge Orientation: 12 elements, values from 0 to 1 */
+    EO: Array<number>;
+};
+
+/**
+ * Facelets event
+ */
+type GanCubeFaceletsEvent = {
+    type: "FACELETS";
+    /** Cube facelets state in the Kociemba notation like "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB" */
+    facelets: string;
+    /** Cube state representing corners and edges orientation and permutation */
+    state: GanCubeState;
+};
+
+/**
+ * Quaternion to represent orientation
+ */
+type GanCubeOrientationQuaternion = {
+    x: number;
+    y: number;
+    z: number;
+    w: number;
+};
+
+/**
+ * Representation of angular velocity by axes
+ */
+type GanCubeAngularVelocity = {
+    x: number;
+    y: number;
+    z: number;
+};
+
+/**
+ * Gyroscope event
+ */
+type GanCubeGyroEvent = {
+    type: "GYRO";
+    /** Cube orientation quaternion, uses Right-Handed coordinate system, +X - Red, +Y - Blue, +Z - White */
+    quaternion: GanCubeOrientationQuaternion;
+    /** Cube angular velocity over current ODR time frame */
+    velocity?: GanCubeAngularVelocity;
+};
+
+/**
+ * Battery event
+ */
+type GanCubeBatteryEvent = {
+    type: "BATTERY";
+    /** Current battery level in percent */
+    batteryLevel: number;
+};
+
+/**
+ * Hardware event
+ */
+type GanCubeHardwareEvent = {
+    type: "HARDWARE";
+    /** Internal cube hardware device model name */
+    hardwareName: string;
+    /** Software/Firmware version of the cube */
+    softwareVersion: string;
+    /** Hardware version of the cube */
+    hardwareVersion: string;
+    /** Is gyroscope supported by this cube model */
+    gyroSupported: boolean;
+};
+
+/**
+ * Disconnect event
+ */
+type GanCubeDisconnectEvent = {
+    type: "DISCONNECT";
+};
+
+/** All possible event message types */
+type GanCubeEventMessage = GanCubeMoveEvent | GanCubeFaceletsEvent | GanCubeGyroEvent | GanCubeBatteryEvent | GanCubeHardwareEvent | GanCubeDisconnectEvent;
+/** Cube event / response to command */
+type GanCubeEvent = { timestamp: number } & GanCubeEventMessage;
+
+/** Extention to the BluetoothDevice for storing and accessing device MAC address */
+interface BluetoothDeviceWithMAC extends BluetoothDevice {
+    mac?: string;
+};
+
+/**
+ * Connection object representing connection API and state
+ */
+interface GanCubeConnection {
+    /** Connected Bluetooth cube device name */
+    readonly deviceName: string;
+    /** Connected Bluetoooth cube device MAC address */
+    readonly deviceMAC: string;
+    /** RxJS Subject to subscribe for cube event messages */
+    events$: Observable<GanCubeEvent>;
+    /** Method to send command to the cube */
+    sendCubeCommand(command: GanCubeCommand): Promise<void>;
+    /** Close this connection */
+    disconnect(): Promise<void>;
+}
+
+/** Raw connection interface for internal use */
+interface GanCubeRawConnection {
+    sendCommandMessage(message: Uint8Array): Promise<void>;
+}
+
+/** Protocol Driver interface */
+interface GanProtocolDriver {
+    /** Create binary command message for cube device */
+    createCommandMessage(command: GanCubeCommand): Uint8Array | undefined;
+    /** Handle binary event messages from cube device */
+    handleStateEvent(conn: GanCubeRawConnection, eventMessage: Uint8Array): Promise<GanCubeEvent[]>;
+}
+
+/** Calculate sum of all numbers in array */
+const sum: (arr: Array<number>) => number = arr => arr.reduce((a, v) => a + v, 0);
+
+/**
+ * Implementation of classic command/response connection with GAN Smart Cube device
+ */
+class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnection {
+
+    device: BluetoothDeviceWithMAC;
+    commandCharacteristic: BluetoothRemoteGATTCharacteristic;
+    stateCharacteristic: BluetoothRemoteGATTCharacteristic;
+
+    encrypter: GanCubeEncrypter;
+    driver: GanProtocolDriver;
+
+    events$: Subject<GanCubeEvent>;
+
+    private constructor(
+        device: BluetoothDeviceWithMAC,
+        commandCharacteristic: BluetoothRemoteGATTCharacteristic,
+        stateCharacteristic: BluetoothRemoteGATTCharacteristic,
+        encrypter: GanCubeEncrypter,
+        driver: GanProtocolDriver
+
+    ) {
+        this.device = device;
+        this.commandCharacteristic = commandCharacteristic;
+        this.stateCharacteristic = stateCharacteristic;
+        this.encrypter = encrypter;
+        this.driver = driver;
+        this.events$ = new Subject<GanCubeEvent>();
+    }
+
+    public static async create(
+        device: BluetoothDeviceWithMAC,
+        commandCharacteristic: BluetoothRemoteGATTCharacteristic,
+        stateCharacteristic: BluetoothRemoteGATTCharacteristic,
+        encrypter: GanCubeEncrypter,
+        driver: GanProtocolDriver
+    ): Promise<GanCubeConnection> {
+        var conn = new GanCubeClassicConnection(device, commandCharacteristic, stateCharacteristic, encrypter, driver);
+        conn.device.addEventListener('gattserverdisconnected', conn.onDisconnect);
+        conn.stateCharacteristic.addEventListener('characteristicvaluechanged', conn.onStateUpdate);
+        await conn.stateCharacteristic.startNotifications();
+        return conn;
+    }
+
+    get deviceName(): string {
+        return this.device.name || "GAN-XXXX";
+    }
+
+    get deviceMAC(): string {
+        return this.device.mac || "00:00:00:00:00:00";
+    }
+
+    async sendCommandMessage(message: Uint8Array): Promise<void> {
+        var encryptedMessage = this.encrypter.encrypt(message);
+        return this.commandCharacteristic.writeValue(encryptedMessage);
+    }
+
+    onStateUpdate = async (evt: Event) => {
+        var characteristic = evt.target as BluetoothRemoteGATTCharacteristic;
+        var eventMessage = characteristic.value;
+        if (eventMessage && eventMessage.byteLength >= 16) {
+            var decryptedMessage = this.encrypter.decrypt(new Uint8Array(eventMessage.buffer));
+            var cubeEvents = await this.driver.handleStateEvent(this, decryptedMessage);
+            cubeEvents.forEach(e => this.events$.next(e));
+        }
+    }
+
+    onDisconnect = async (): Promise<any> => {
+        this.device.removeEventListener('gattserverdisconnected', this.onDisconnect);
+        this.stateCharacteristic.removeEventListener('characteristicvaluechanged', this.onStateUpdate);
+        this.events$.next({ timestamp: now(), type: "DISCONNECT" });
+        this.events$.unsubscribe();
+        return this.stateCharacteristic.stopNotifications().catch(() => { });
+    }
+
+    async sendCubeCommand(command: GanCubeCommand): Promise<void> {
+        var commandMessage = this.driver.createCommandMessage(command);
+        if (commandMessage) {
+            return this.sendCommandMessage(commandMessage);
+        }
+    }
+
+    async disconnect(): Promise<void> {
+        await this.onDisconnect();
+        if (this.device.gatt?.connected) {
+            this.device.gatt?.disconnect();
+        }
+    }
+
+}
+
+/**
+ * View for binary protocol messages allowing to retrieve from message arbitrary length bit words
+ */
+class GanProtocolMessageView {
+
+    private bits: string;
+
+    constructor(message: Uint8Array) {
+        this.bits = Array.from(message).map(byte => (byte + 0x100).toString(2).slice(1)).join('');
+    }
+
+    getBitWord(startBit: number, bitLength: number, littleEndian = false): number {
+        if (bitLength <= 8) {
+            return parseInt(this.bits.slice(startBit, startBit + bitLength), 2);
+        } else if (bitLength == 16 || bitLength == 32) {
+            let buf = new Uint8Array(bitLength / 8);
+            for (let i = 0; i < buf.length; i++) {
+                buf[i] = parseInt(this.bits.slice(8 * i + startBit, 8 * i + startBit + 8), 2);
+            }
+            let dv = new DataView(buf.buffer);
+            return bitLength == 16 ? dv.getUint16(0, littleEndian) : dv.getUint32(0, littleEndian);
+        } else {
+            throw new Error('Unsupproted bit word length');
+        }
+    }
+
+}
+
+/**
+ * Driver implementation for GAN Gen2 protocol, supported cubes:
+ *  - GAN Mini ui FreePlay
+ *  - GAN12 ui FreePlay
+ *  - GAN12 ui
+ *  - GAN356 i Carry S
+ *  - GAN356 i Carry
+ *  - GAN356 i 3
+ *  - Monster Go 3Ai
+ */
+class GanGen2ProtocolDriver implements GanProtocolDriver {
+
+    private lastSerial: number = -1;
+    private lastMoveTimestamp: number = 0;
+    private cubeTimestamp: number = 0;
+
+    createCommandMessage(command: GanCubeCommand): Uint8Array | undefined {
+        var msg: Uint8Array | undefined = new Uint8Array(20).fill(0);
+        switch (command.type) {
+            case 'REQUEST_FACELETS':
+                msg[0] = 4;
+                break;
+            case 'REQUEST_HARDWARE':
+                msg[0] = 5;
+                break;
+            case 'REQUEST_BATTERY':
+                msg[0] = 9;
+                break;
+            case 'REQUEST_RESET':
+                msg.set([10, 5, 57, 119, 0, 0, 1, 35, 69, 103, 137, 171, 0, 0, 0, 0, 0, 0, 0, 0]);
+                break;
+            default:
+                msg = undefined;
+        }
+        return msg;
+    }
+
+    async handleStateEvent(conn: GanCubeRawConnection, eventMessage: Uint8Array): Promise<GanCubeEvent[]> {
+
+        var timestamp = now();
+
+        var cubeEvents: GanCubeEvent[] = [];
+        var msg = new GanProtocolMessageView(eventMessage);
+        var eventType = msg.getBitWord(0, 4);
+
+        if (eventType == 1) { // GYRO
+
+            // Orientation Quaternion
+            let qw = msg.getBitWord(4, 16);
+            let qx = msg.getBitWord(20, 16);
+            let qy = msg.getBitWord(36, 16);
+            let qz = msg.getBitWord(52, 16);
+
+            // Angular Velocity
+            let vx = msg.getBitWord(68, 4);
+            let vy = msg.getBitWord(72, 4);
+            let vz = msg.getBitWord(76, 4);
+
+            cubeEvents.push({
+                type: "GYRO",
+                timestamp: timestamp,
+                quaternion: {
+                    x: (1 - (qx >> 15) * 2) * (qx & 0x7FFF) / 0x7FFF,
+                    y: (1 - (qy >> 15) * 2) * (qy & 0x7FFF) / 0x7FFF,
+                    z: (1 - (qz >> 15) * 2) * (qz & 0x7FFF) / 0x7FFF,
+                    w: (1 - (qw >> 15) * 2) * (qw & 0x7FFF) / 0x7FFF
+                },
+                velocity: {
+                    x: (1 - (vx >> 3) * 2) * (vx & 0x7),
+                    y: (1 - (vy >> 3) * 2) * (vy & 0x7),
+                    z: (1 - (vz >> 3) * 2) * (vz & 0x7)
+                }
+            });
+
+        } else if (eventType == 2) { // MOVE
+
+            let serial = msg.getBitWord(4, 8);
+            let diff = this.lastSerial == -1 ? 1 : Math.min((serial - this.lastSerial) & 0xFF, 7);
+            this.lastSerial = serial;
+
+            if (diff > 0) {
+                for (let i = diff - 1; i >= 0; i--) {
+                    let face = msg.getBitWord(12 + 5 * i, 4);
+                    let direction = msg.getBitWord(16 + 5 * i, 1);
+                    let move = "URFDLB".charAt(face) + " '".charAt(direction);
+                    let elapsed = msg.getBitWord(47 + 16 * i, 16);
+                    if (elapsed == 0) { // In case of 16-bit cube timestamp register overflow
+                        elapsed = timestamp - this.lastMoveTimestamp;
+                    }
+                    this.cubeTimestamp += elapsed;
+                    cubeEvents.push({
+                        type: "MOVE",
+                        timestamp: timestamp,
+                        localTimestamp: i == 0 ? timestamp : null, // Missed and recovered events has no meaningfull local timestamps
+                        cubeTimestamp: this.cubeTimestamp,
+                        face: face,
+                        direction: direction,
+                        move: move.trim()
+                    });
+                }
+                this.lastMoveTimestamp = timestamp;
+            }
+
+        } else if (eventType == 4) { // FACELETS
+
+            let serial = msg.getBitWord(4, 8);
+            this.lastSerial = serial;
+
+            // Corner/Edge Permutation/Orientation
+            let cp: Array<number> = [];
+            let co: Array<number> = [];
+            let ep: Array<number> = [];
+            let eo: Array<number> = [];
+
+            // Corners
+            for (let i = 0; i < 7; i++) {
+                cp.push(msg.getBitWord(12 + i * 3, 3));
+                co.push(msg.getBitWord(33 + i * 2, 2));
+            }
+            cp.push(28 - sum(cp));
+            co.push((3 - (sum(co) % 3)) % 3);
+
+            // Edges
+            for (let i = 0; i < 11; i++) {
+                ep.push(msg.getBitWord(47 + i * 4, 4));
+                eo.push(msg.getBitWord(91 + i, 1));
+            }
+            ep.push(66 - sum(ep));
+            eo.push((2 - (sum(eo) % 2)) % 2);
+
+            cubeEvents.push({
+                type: "FACELETS",
+                timestamp: timestamp,
+                facelets: toKociembaFacelets(cp, co, ep, eo),
+                state: {
+                    CP: cp,
+                    CO: co,
+                    EP: ep,
+                    EO: eo
+                },
+            });
+
+        } else if (eventType == 5) { // HARDWARE
+
+            let hwMajor = msg.getBitWord(8, 8);
+            let hwMinor = msg.getBitWord(16, 8);
+            let swMajor = msg.getBitWord(24, 8);
+            let swMinor = msg.getBitWord(32, 8);
+            let gyroSupported = msg.getBitWord(104, 1);
+
+            let hardwareName = '';
+            for (var i = 0; i < 8; i++) {
+                hardwareName += String.fromCharCode(msg.getBitWord(i * 8 + 40, 8));
+            }
+
+            cubeEvents.push({
+                type: "HARDWARE",
+                timestamp: timestamp,
+                hardwareName: hardwareName,
+                hardwareVersion: `${hwMajor}.${hwMinor}`,
+                softwareVersion: `${swMajor}.${swMinor}`,
+                gyroSupported: !!gyroSupported
+            });
+
+        } else if (eventType == 9) { // BATTERY
+
+            let batteryLevel = msg.getBitWord(8, 8);
+
+            cubeEvents.push({
+                type: "BATTERY",
+                timestamp: timestamp,
+                batteryLevel: batteryLevel
+            });
+
+        }
+
+        return cubeEvents;
+
+    }
+
+}
+
+/**
+ * Driver implementation for GAN Gen3 protocol, supported cubes:
+ *  - GAN356 i Carry 2
+ */
+class GanGen3ProtocolDriver implements GanProtocolDriver {
+    createCommandMessage(command: GanCubeCommand): Uint8Array | undefined {
+        throw new Error('Not implemented yet');
+    }
+    async handleStateEvent(conn: GanCubeRawConnection, eventMessage: Uint8Array): Promise<GanCubeEvent[]> {
+        throw new Error('Not implemented yet');
+    }
+}
+
+export {
+    BluetoothDeviceWithMAC,
+    GanCubeConnection,
+    GanCubeEvent,
+    GanCubeCommand,
+    GanCubeMove,
+    GanCubeClassicConnection,
+    GanProtocolDriver,
+    GanGen2ProtocolDriver,
+    GanGen3ProtocolDriver
+}
