@@ -7,7 +7,17 @@ Nature of the GAN Smart Timer and Smart Cubes is event-driven, so this library i
 depends on [RxJS](https://rxjs.dev/), and library API provide [Observable](https://rxjs.dev/guide/observable) 
 where you can subscribe for events.
 
-## GAN Smart Timers:
+## Installation
+
+Package `gan-web-bluetooth` is available in the npm registry:
+
+[![npm version](https://badge.fury.io/js/gan-web-bluetooth.svg)](https://badge.fury.io/js/gan-web-bluetooth)
+
+```
+$ npm install gan-web-bluetooth
+```
+
+## GAN Smart Timers
 
 Supported GAN timer devices:
 - GAN Smart Timer
@@ -75,7 +85,7 @@ stateDiagram-v2
     FINISHED --> IDLE
 ```
 
-## GAN Smart Cubes:
+## GAN Smart Cubes
 
 Supported Smart Cube devices:
 - GAN Gen2 protocol smart cubes:
@@ -88,7 +98,7 @@ Supported Smart Cube devices:
   - Monster Go 3Ai
 - MoYu AI 2023 (this cube uses GAN Gen2 protocol)
 - GAN Gen3 protocol smart cubes:
-  - ~~GAN356 i Carry 2~~ (Work in Progress)
+  - GAN356 i Carry 2
 
 Sample application how to use this library with GAN Smart Cubes can be found here:
 - https://github.com/afedotov/gan-cube-sample

@@ -34,7 +34,7 @@ type GanCubeMove = {
     face: number;
     /** Face direction: 0 - CW, 1 - CCW */
     direction: number;
-    /** Cube move in common string notation, like R' or U2 */
+    /** Cube move in common string notation, like R' or U */
     move: string;
     /** Timestamp according to host device clock, null in case if bluetooth event was missed and recovered */
     localTimestamp: number | null;
@@ -53,7 +53,7 @@ type GanCubeMoveEvent = { type: "MOVE" } & GanCubeMove;
 type GanCubeState = {
     /** Corner Permutation: 8 elements, values from 0 to 7 */
     CP: Array<number>;
-    /** Corner Orientation: 8 elements, values from 0 to 3 */
+    /** Corner Orientation: 8 elements, values from 0 to 2 */
     CO: Array<number>;
     /** Edge Permutation: 12 elements, values from 0 to 11 */
     EP: Array<number>;
@@ -314,16 +314,16 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
         var msg: Uint8Array | undefined = new Uint8Array(20).fill(0);
         switch (command.type) {
             case 'REQUEST_FACELETS':
-                msg[0] = 4;
+                msg[0] = 0x04;
                 break;
             case 'REQUEST_HARDWARE':
-                msg[0] = 5;
+                msg[0] = 0x05;
                 break;
             case 'REQUEST_BATTERY':
-                msg[0] = 9;
+                msg[0] = 0x09;
                 break;
             case 'REQUEST_RESET':
-                msg.set([10, 5, 57, 119, 0, 0, 1, 35, 69, 103, 137, 171, 0, 0, 0, 0, 0, 0, 0, 0]);
+                msg.set([0x0A, 0x05, 0x39, 0x77, 0x00, 0x00, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
                 break;
             default:
                 msg = undefined;
@@ -339,7 +339,7 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
         var msg = new GanProtocolMessageView(eventMessage);
         var eventType = msg.getBitWord(0, 4);
 
-        if (eventType == 1) { // GYRO
+        if (eventType == 0x01) { // GYRO
 
             // Orientation Quaternion
             let qw = msg.getBitWord(4, 16);
@@ -368,7 +368,7 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
                 }
             });
 
-        } else if (eventType == 2) { // MOVE
+        } else if (eventType == 0x02) { // MOVE
 
             let serial = msg.getBitWord(4, 8);
             let diff = this.lastSerial == -1 ? 1 : Math.min((serial - this.lastSerial) & 0xFF, 7);
@@ -397,7 +397,7 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
                 this.lastMoveTimestamp = timestamp;
             }
 
-        } else if (eventType == 4) { // FACELETS
+        } else if (eventType == 0x04) { // FACELETS
 
             let serial = msg.getBitWord(4, 8);
             this.lastSerial = serial;
@@ -436,7 +436,7 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
                 },
             });
 
-        } else if (eventType == 5) { // HARDWARE
+        } else if (eventType == 0x05) { // HARDWARE
 
             let hwMajor = msg.getBitWord(8, 8);
             let hwMinor = msg.getBitWord(16, 8);
@@ -458,14 +458,14 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
                 gyroSupported: !!gyroSupported
             });
 
-        } else if (eventType == 9) { // BATTERY
+        } else if (eventType == 0x09) { // BATTERY
 
             let batteryLevel = msg.getBitWord(8, 8);
 
             cubeEvents.push({
                 type: "BATTERY",
                 timestamp: timestamp,
-                batteryLevel: batteryLevel
+                batteryLevel: Math.min(batteryLevel, 100)
             });
 
         }
@@ -481,12 +481,143 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
  *  - GAN356 i Carry 2
  */
 class GanGen3ProtocolDriver implements GanProtocolDriver {
+
+    private lastSerial: number = -1;
+
     createCommandMessage(command: GanCubeCommand): Uint8Array | undefined {
-        throw new Error('Not implemented yet');
+        var msg: Uint8Array | undefined = new Uint8Array(16).fill(0);
+        switch (command.type) {
+            case 'REQUEST_FACELETS':
+                msg.set([0x68, 0x01]);
+                break;
+            case 'REQUEST_HARDWARE':
+                msg.set([0x68, 0x04]);
+                break;
+            case 'REQUEST_BATTERY':
+                msg.set([0x68, 0x07]);
+                break;
+            case 'REQUEST_RESET':
+                msg.set([0x68, 0x05, 0x05, 0x39, 0x77, 0x00, 0x00, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0x00, 0x00, 0x00]);
+                break;
+            default:
+                msg = undefined;
+        }
+        return msg;
     }
+
     async handleStateEvent(conn: GanCubeRawConnection, eventMessage: Uint8Array): Promise<GanCubeEvent[]> {
-        throw new Error('Not implemented yet');
+
+        var timestamp = now();
+
+        var cubeEvents: GanCubeEvent[] = [];
+        var msg = new GanProtocolMessageView(eventMessage);
+
+        var magic = msg.getBitWord(0, 8);
+        var eventType = msg.getBitWord(8, 8);
+        var dataLength = msg.getBitWord(16, 8);
+
+        if (magic == 0x55 && dataLength > 0) {
+
+            if (eventType == 0x01) { // MOVE
+
+                let cubeTimestamp = msg.getBitWord(24, 32, true);
+                let serial = msg.getBitWord(56, 16, true);
+
+                // TODO: handle possible bluetooth event loss using cube MOVE_HISTORY command
+                this.lastSerial = serial;
+
+                var direction = msg.getBitWord(72, 2);
+                var face = [2, 32, 8, 1, 16, 4].indexOf(msg.getBitWord(74, 6));
+                let move = "URFDLB".charAt(face) + " '".charAt(direction);
+
+                cubeEvents.push({
+                    type: "MOVE",
+                    timestamp: timestamp,
+                    localTimestamp: timestamp,
+                    cubeTimestamp: cubeTimestamp,
+                    face: face,
+                    direction: direction,
+                    move: move.trim()
+                });
+
+            } else if (eventType == 0x02) { // FACELETS
+
+                let serial = msg.getBitWord(24, 16, true);
+                this.lastSerial = serial;
+
+                // Corner/Edge Permutation/Orientation
+                let cp: Array<number> = [];
+                let co: Array<number> = [];
+                let ep: Array<number> = [];
+                let eo: Array<number> = [];
+
+                // Corners
+                for (let i = 0; i < 7; i++) {
+                    cp.push(msg.getBitWord(40 + i * 3, 3));
+                    co.push(msg.getBitWord(61 + i * 2, 2));
+                }
+                cp.push(28 - sum(cp));
+                co.push((3 - (sum(co) % 3)) % 3);
+
+                // Edges
+                for (let i = 0; i < 11; i++) {
+                    ep.push(msg.getBitWord(77 + i * 4, 4));
+                    eo.push(msg.getBitWord(121 + i, 1));
+                }
+                ep.push(66 - sum(ep));
+                eo.push((2 - (sum(eo) % 2)) % 2);
+
+                cubeEvents.push({
+                    type: "FACELETS",
+                    timestamp: timestamp,
+                    facelets: toKociembaFacelets(cp, co, ep, eo),
+                    state: {
+                        CP: cp,
+                        CO: co,
+                        EP: ep,
+                        EO: eo
+                    },
+                });
+
+            } else if (eventType == 0x07) { // HARDWARE
+
+                let swMajor = msg.getBitWord(72, 4);
+                let swMinor = msg.getBitWord(76, 4);
+                let hwMajor = msg.getBitWord(80, 4);
+                let hwMinor = msg.getBitWord(84, 4);
+
+                let hardwareName = '';
+                for (var i = 0; i < 5; i++) {
+                    hardwareName += String.fromCharCode(msg.getBitWord(i * 8 + 32, 8));
+                }
+
+                cubeEvents.push({
+                    type: "HARDWARE",
+                    timestamp: timestamp,
+                    hardwareName: hardwareName,
+                    hardwareVersion: `${hwMajor}.${hwMinor}`,
+                    softwareVersion: `${swMajor}.${swMinor}`,
+                    gyroSupported: false
+                });
+
+            } else if (eventType == 0x10) { // BATTERY
+
+                let batteryLevel = msg.getBitWord(24, 8);
+
+                cubeEvents.push({
+                    type: "BATTERY",
+                    timestamp: timestamp,
+                    batteryLevel: Math.min(batteryLevel, 100)
+                });
+
+            }
+
+        }
+
+        return cubeEvents;
+
     }
+
 }
 
 export {

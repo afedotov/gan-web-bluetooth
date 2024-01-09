@@ -1,7 +1,7 @@
 {
   "name": "gan-web-bluetooth",
-  "version": "2.0.0",
-  "description": "Library for interaction with GAN Smart Timer using Web Bluetooth API",
+  "version": "2.1.0",
+  "description": "Library for interaction with GAN Smart Timers and GAN Smart Cubes using Web Bluetooth API",
   "private": false,
   "types": "./dist/types/index.d.ts",
   "module": "./dist/esm/index.mjs",
@@ -22,9 +22,14 @@
     "GANCUBE",
     "Timer",
     "GAN Smart Timer",
+    "GAN Smart Cube",
+    "Smart Timer",
+    "Smart Cube",
     "Bluetooth",
     "Web Bluetooth",
-    "Speedcubing"
+    "Cubing",
+    "Speedcubing",
+    "Rubik's Cube"
   ],
   "author": "Andy Fedotov <andy.fedotov@gmail.com>",
   "license": "MIT",
@@ -39,7 +44,7 @@
   "devDependencies": {
     "@types/aes-js": "^3.1.4",
     "@types/web-bluetooth": "^0.0.20",
-    "@rollup/plugin-typescript": "^11.1.5",
+    "@rollup/plugin-typescript": "^11.1.6",
     "rollup": "^4.9.4",
     "typescript": "^5.3.3"
   },

@@ -80,16 +80,8 @@ class GanGen2CubeEncrypter implements GanCubeEncrypter {
 /**
  * Implementation for encryption scheme used in the GAN Gen3 cubes
  */
-class GanGen3CubeEncrypter implements GanCubeEncrypter {
-    constructor(key: Uint8Array, iv: Uint8Array, salt: Uint8Array) {
-        throw new Error('Not implemented yet');
-    }
-    encrypt(data: Uint8Array): Uint8Array {
-        throw new Error('Not implemented yet');
-    }
-    decrypt(data: Uint8Array): Uint8Array {
-        throw new Error('Not implemented yet');
-    }
+class GanGen3CubeEncrypter extends GanGen2CubeEncrypter {
+    /** 101 its just the same */
 }
 
 export {
