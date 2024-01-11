@@ -49,7 +49,7 @@ async function autoRetrieveMacAddress(device: BluetoothDevice): Promise<string> 
             device.removeEventListener("advertisementreceived", onAdvEvent);
             abortController.abort();
             var mac = extractMAC((evt as BluetoothAdvertisingEvent).manufacturerData);
-            mac && resolve(mac) || reject("Unable to determine cube MAC address - no Manufacturer Specific Data found under known CICs");
+            mac ? resolve(mac) : reject("Unable to determine cube MAC address - no Manufacturer Specific Data found under known CICs");
         };
         device.addEventListener("advertisementreceived", onAdvEvent);
         device.watchAdvertisements({ signal: abortController.signal });
