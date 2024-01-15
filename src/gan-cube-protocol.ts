@@ -45,7 +45,11 @@ type GanCubeMove = {
 /**
  * Move event
  */
-type GanCubeMoveEvent = { type: "MOVE" } & GanCubeMove;
+type GanCubeMoveEvent = {
+    type: "MOVE";
+    /** Serial number, value range 0-255, increased in a circle on each facelets state change */
+    serial: number;
+} & GanCubeMove;
 
 /**
  * Representation of GAN Smart Cube facelets state
@@ -66,6 +70,8 @@ type GanCubeState = {
  */
 type GanCubeFaceletsEvent = {
     type: "FACELETS";
+    /** Serial number, value range 0-255, increased in a circle on each facelets state change */
+    serial: number;
     /** Cube facelets state in the Kociemba notation like "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB" */
     facelets: string;
     /** Cube state representing corners and edges orientation and permutation */
@@ -386,6 +392,7 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
                     this.cubeTimestamp += elapsed;
                     cubeEvents.push({
                         type: "MOVE",
+                        serial: (serial - i) & 0xFF,
                         timestamp: timestamp,
                         localTimestamp: i == 0 ? timestamp : null, // Missed and recovered events has no meaningfull local timestamps
                         cubeTimestamp: this.cubeTimestamp,
@@ -426,6 +433,7 @@ class GanGen2ProtocolDriver implements GanProtocolDriver {
 
             cubeEvents.push({
                 type: "FACELETS",
+                serial: serial,
                 timestamp: timestamp,
                 facelets: toKociembaFacelets(cp, co, ep, eo),
                 state: {
@@ -532,6 +540,7 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
 
                 cubeEvents.push({
                     type: "MOVE",
+                    serial: serial,
                     timestamp: timestamp,
                     localTimestamp: timestamp,
                     cubeTimestamp: cubeTimestamp,
@@ -569,6 +578,7 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
 
                 cubeEvents.push({
                     type: "FACELETS",
+                    serial: serial,
                     timestamp: timestamp,
                     facelets: toKociembaFacelets(cp, co, ep, eo),
                     state: {
