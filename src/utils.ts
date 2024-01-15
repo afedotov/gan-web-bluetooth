@@ -7,9 +7,9 @@ import { GanCubeMove } from './gan-cube-protocol';
  * @returns Current host clock timestamp in milliseconds
  */
 const now: () => number =
-    typeof window?.performance?.now == 'function' ?
+    typeof window != 'undefined' && typeof window.performance?.now == 'function' ?
         () => Math.floor(window.performance.now()) :
-        typeof process?.hrtime?.bigint == 'function' ?
+        typeof process != 'undefined' && typeof process.hrtime?.bigint == 'function' ?
             () => Number(process.hrtime.bigint() / 1_000_000n) :
             () => Date.now();
 
