@@ -7,9 +7,11 @@ import { GanCubeMove } from './gan-cube-protocol';
  * @returns Current host clock timestamp in milliseconds
  */
 const now: () => number =
-    typeof window.performance?.now == 'function' ?
+    typeof window?.performance?.now == 'function' ?
         () => Math.floor(window.performance.now()) :
-        () => Date.now();
+        typeof process?.hrtime?.bigint == 'function' ?
+            () => Number(process.hrtime.bigint() / 1_000_000n) :
+            () => Date.now();
 
 function linregress(X: Array<number | null>, Y: Array<number | null>) {
     var sumX = 0;
