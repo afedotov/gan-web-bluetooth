@@ -14,7 +14,7 @@ export const GAN_GEN3_COMMAND_CHARACTERISTIC = "8653000c-43e6-47b7-9cb0-5fc21d4a
 export const GAN_GEN3_STATE_CHARACTERISTIC = "8653000b-43e6-47b7-9cb0-5fc21d4ae340";
 
 /** List of possible Company Identifier Codes */
-export const GAN_CIC_LIST = [0x0001, 0x0501];
+export const GAN_CIC_LIST = [0x0001, 0x1001, 0x0501];
 
 /**  List of encryption keys */
 export const GAN_ENCRYPTION_KEYS = [
@@ -27,3 +27,4 @@ export const GAN_ENCRYPTION_KEYS = [
         iv: [0x01, 0x44, 0x28, 0x06, 0x86, 0x21, 0x22, 0x28, 0x51, 0x05, 0x08, 0x31, 0x82, 0x02, 0x21, 0x06]
     }
 ];
+

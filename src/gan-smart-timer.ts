@@ -217,13 +217,17 @@ async function connectGanTimer(): Promise<GanTimerConnection> {
 
 }
 
+export type {
+    GanTimerConnection,
+    GanTimerEvent,
+    GanTimerTime,
+    GanTimerRecordedTimes
+};
+
 export {
     connectGanTimer,
     makeTime,
     makeTimeFromTimestamp,
-    GanTimerConnection,
-    GanTimerEvent,
-    GanTimerState,
-    GanTimerTime,
-    GanTimerRecordedTimes
-}
+    GanTimerState
+};
+

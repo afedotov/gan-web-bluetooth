@@ -2,7 +2,7 @@
 import { ModeOfOperation } from 'aes-js';
 
 /**
- * Common cube encryptor interface
+ * Common cube encrypter interface
  */
 interface GanCubeEncrypter {
     /** Encrypt binary message buffer represented as Uint8Array */
@@ -84,8 +84,12 @@ class GanGen3CubeEncrypter extends GanGen2CubeEncrypter {
     /** 101 its just the same */
 }
 
+export type {
+    GanCubeEncrypter
+};
+
 export {
-    GanCubeEncrypter,
     GanGen2CubeEncrypter,
     GanGen3CubeEncrypter
-}
+};
+

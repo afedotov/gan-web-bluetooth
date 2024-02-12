@@ -39,32 +39,37 @@ function extractMAC(manufacturerData: BluetoothManufacturerData): string {
 }
 
 /** If browser supports Web Bluetooth watchAdvertisements() API, try to retrieve MAC address automatically */
-async function autoRetrieveMacAddress(device: BluetoothDevice): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
+async function autoRetrieveMacAddress(device: BluetoothDevice): Promise<string | null> {
+    return new Promise<string | null>((resolve) => {
         if (typeof device.watchAdvertisements != 'function') {
-            reject("Unable to determine cube MAC address - no support for Web Bluetooth Advertisements API");
+            resolve(null);
         }
         var abortController = new AbortController();
         var onAdvEvent = (evt: Event) => {
             device.removeEventListener("advertisementreceived", onAdvEvent);
             abortController.abort();
             var mac = extractMAC((evt as BluetoothAdvertisingEvent).manufacturerData);
-            mac ? resolve(mac) : reject("Unable to determine cube MAC address - no Manufacturer Specific Data found under known CICs");
+            resolve(mac || null);
         };
-        device.addEventListener("advertisementreceived", onAdvEvent);
-        device.watchAdvertisements({ signal: abortController.signal });
-        setTimeout(() => {
+        var onAbort = () => {
             device.removeEventListener("advertisementreceived", onAdvEvent);
             abortController.abort();
-            reject("Unable to determine cube MAC address - timeout waiting for advertisement packet from device");
-        }, 10000);
+            resolve(null);
+        };
+        device.addEventListener("advertisementreceived", onAdvEvent);
+        device.watchAdvertisements({ signal: abortController.signal }).catch(onAbort);
+        setTimeout(onAbort, 10000);
     });
 }
 
 /**
  * Type representing function interface to implement custom MAC address provider
+ * @param device Current BluetoothDevice selected by user.
+ * @param isFallbackCall Flag indicating this is final and last resort call for MAC address.
+ *                       If this flag is not set, custom provider can return null instead of MAC,
+ *                       in such case library will try to read MAC automatically.
  */
-type MacAddressProvider = (device: BluetoothDevice) => Promise<string | null>;
+type MacAddressProvider = (device: BluetoothDevice, isFallbackCall?: boolean) => Promise<string | null>;
 
 /**
  * Initiate new connection with the GAN Smart Cube device
@@ -87,9 +92,13 @@ async function connectGanCube(customMacAddressProvider?: MacAddressProvider): Pr
     );
 
     // Retrieve cube MAC address needed for key salting
-    device.mac = customMacAddressProvider
-        && await customMacAddressProvider(device)
-        || await autoRetrieveMacAddress(device);
+    var mac = customMacAddressProvider && await customMacAddressProvider(device, false)
+        || await autoRetrieveMacAddress(device)
+        || customMacAddressProvider && await customMacAddressProvider(device, true);
+
+    if (!mac)
+        throw new Error('Unable to determine cube MAC address, connection is not possible!');
+    device.mac = mac;
 
     // Create encryption salt from MAC address bytes placed in reverse order
     var salt = new Uint8Array(device.mac.split(/[:-\s]+/).map((c) => parseInt(c, 16)).reverse());
@@ -129,11 +138,15 @@ async function connectGanCube(customMacAddressProvider?: MacAddressProvider): Pr
 
 }
 
-export {
+export type {
     MacAddressProvider,
     GanCubeConnection,
     GanCubeCommand,
     GanCubeEvent,
-    GanCubeMove,
+    GanCubeMove
+};
+
+export {
     connectGanCube
-}
+};
+

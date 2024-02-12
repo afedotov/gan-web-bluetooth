@@ -21,6 +21,7 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "importHelpers": false,
+    "isolatedModules": true,
     "sourceMap": false
   }
 }

@@ -105,10 +105,10 @@ const EDGE_FACELET_MAP = [
  * Convert Corner/Edge Permutation/Orientation cube state to the Kociemba facelets representation string
  * 
  * Example - solved state:
- *   cp = [0, 1, 2, 3, 4, 5, 6]
- *   co = [0, 0, 0, 0, 0, 0, 0]
- *   ep = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
- *   eo = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+ *   cp = [0, 1, 2, 3, 4, 5, 6, 7]
+ *   co = [0, 0, 0, 0, 0, 0, 0, 0]
+ *   ep = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+ *   eo = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
  *   facelets = "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB"
  * Example - state after F R moves made:
  *   cp = [0, 5, 2, 1, 7, 4, 6, 3]
@@ -149,3 +149,4 @@ export {
     cubeTimestampCalcSkew,
     toKociembaFacelets,
 }
+
