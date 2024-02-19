@@ -23,7 +23,7 @@ Supported GAN timer devices:
 - GAN Smart Timer
 - GAN Halo Smart Timer
 
-Sample application using this library can be found here:
+Sample application how to use this library with GAN Smart Timer can be found here:
 - https://github.com/afedotov/gan-timer-display
 - Live version: [GAN Timer Display](https://afedotov.github.io/gan-timer-display/)
 

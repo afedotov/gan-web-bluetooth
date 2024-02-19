@@ -202,7 +202,6 @@ class GanCubeClassicConnection implements GanCubeConnection, GanCubeRawConnectio
         stateCharacteristic: BluetoothRemoteGATTCharacteristic,
         encrypter: GanCubeEncrypter,
         driver: GanProtocolDriver
-
     ) {
         this.device = device;
         this.commandCharacteristic = commandCharacteristic;
@@ -518,11 +517,14 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
     private async requestMoveHistory(conn: GanCubeRawConnection, serial: number, count: number): Promise<void> {
         var msg = new Uint8Array(16).fill(0);
         // Move history response data is byte-aligned, and moves always starting with near-ceil odd serial number, regardless of requested.
-        // Adjust serial and count to always get properly aligned history window that contains all reqested moves.
-        if (serial % 2 == 0) {
-            serial = (serial + 1) & 0xFF;
-            count += count % 2 == 0 ? 2 : 1;
-        }
+        // Adjust serial and count to get odd serial aligned history window with even number of moves inside.
+        if (serial % 2 == 0)
+            serial = (serial - 1) & 0xFF;
+        if (count % 2 == 1)
+            count++;
+        // Never overflow requested history window beyond the serial number cycle edge 255 -> 0.
+        // Because due to iCarry2 firmware bug the moves beyond the edge will be spoofed with 'D' (just zero bytes).
+        count = Math.min(count, serial + 1);
         msg.set([0x68, 0x03, serial, 0, count, 0]);
         return conn.sendCommandMessage(msg).catch(() => {
             // We can safely suppress and ignore possible GATT write errors, requestMoveHistory command is automatically retried on next move event
