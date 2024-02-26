@@ -13,8 +13,8 @@ export const GAN_GEN3_COMMAND_CHARACTERISTIC = "8653000c-43e6-47b7-9cb0-5fc21d4a
 /** GAN Gen3 protocol BLE state characteristic */
 export const GAN_GEN3_STATE_CHARACTERISTIC = "8653000b-43e6-47b7-9cb0-5fc21d4ae340";
 
-/** List of possible Company Identifier Codes */
-export const GAN_CIC_LIST = [0x0001, 0x1001, 0x0501];
+/** List of Company Identifier Codes, fill with all values [0x0001, 0xFF01] possible for GAN cubes */
+export const GAN_CIC_LIST = Array(256).fill(undefined).map((v, i) => (i << 8) | 0x01);
 
 /**  List of encryption keys */
 export const GAN_ENCRYPTION_KEYS = [
