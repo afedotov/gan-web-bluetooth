@@ -606,7 +606,7 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
     private async checkIfMoveMissed(conn: GanCubeRawConnection) {
         let diff = (this.serial - this.lastSerial) & 0xFF;
         if (diff > 0) {
-            if (this.lastSerial != 255) { // Avoid iCarry2 firmware bug with facelets state event at 255 move counter
+            if (this.serial != 0) { // Constraint to avoid iCarry2 firmware bug with facelets state event at 255 move counter
                 let bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
                 let startSerial = bufferHead ? bufferHead.serial : (this.serial + 1) & 0xFF;
                 await this.requestMoveHistory(conn, startSerial, diff + 1);
