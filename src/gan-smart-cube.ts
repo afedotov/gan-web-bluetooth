@@ -1,6 +1,6 @@
 
 import * as def from './gan-cube-definitions';
-import { GanGen2CubeEncrypter, GanGen3CubeEncrypter } from './gan-cube-encrypter';
+import { GanGen2CubeEncrypter, GanGen3CubeEncrypter, GanGen4CubeEncrypter } from './gan-cube-encrypter';
 import {
     BluetoothDeviceWithMAC,
     GanCubeConnection,
@@ -9,18 +9,19 @@ import {
     GanCubeMove,
     GanCubeClassicConnection,
     GanGen2ProtocolDriver,
-    GanGen3ProtocolDriver
+    GanGen3ProtocolDriver,
+    GanGen4ProtocolDriver
 } from './gan-cube-protocol';
 
 /** Iterate over all known GAN cube CICs to find Manufacturer Specific Data */
 function getManufacturerDataBytes(manufacturerData: BluetoothManufacturerData | DataView): DataView | undefined {
-    // Workaround for Bluefy browser which may return DataView directly instead of Map
+    // Workaround for Bluefy browser which may return raw DataView directly instead of Map
     if (manufacturerData instanceof DataView) {
-        return manufacturerData;
+        return new DataView(manufacturerData.buffer.slice(2, 11));
     }
     for (var id of def.GAN_CIC_LIST) {
         if (manufacturerData.has(id)) {
-            return manufacturerData.get(id);
+            return new DataView(manufacturerData.get(id)!.buffer.slice(0, 9));
         }
     }
     return;
@@ -86,7 +87,7 @@ async function connectGanCube(customMacAddressProvider?: MacAddressProvider): Pr
                 { namePrefix: "MG" },
                 { namePrefix: "AiCube" }
             ],
-            optionalServices: [def.GAN_GEN2_SERVICE, def.GAN_GEN3_SERVICE],
+            optionalServices: [def.GAN_GEN2_SERVICE, def.GAN_GEN3_SERVICE, def.GAN_GEN4_SERVICE],
             optionalManufacturerData: def.GAN_CIC_LIST
         }
     );
@@ -126,6 +127,14 @@ async function connectGanCube(customMacAddressProvider?: MacAddressProvider): Pr
             let key = def.GAN_ENCRYPTION_KEYS[0];
             let encrypter = new GanGen3CubeEncrypter(new Uint8Array(key.key), new Uint8Array(key.iv), salt);
             let driver = new GanGen3ProtocolDriver();
+            conn = await GanCubeClassicConnection.create(device, commandCharacteristic, stateCharacteristic, encrypter, driver);
+            break;
+        } else if (serviceUUID == def.GAN_GEN4_SERVICE) {
+            let commandCharacteristic = await service.getCharacteristic(def.GAN_GEN4_COMMAND_CHARACTERISTIC);
+            let stateCharacteristic = await service.getCharacteristic(def.GAN_GEN4_STATE_CHARACTERISTIC);
+            let key = def.GAN_ENCRYPTION_KEYS[0];
+            let encrypter = new GanGen4CubeEncrypter(new Uint8Array(key.key), new Uint8Array(key.iv), salt);
+            let driver = new GanGen4ProtocolDriver();
             conn = await GanCubeClassicConnection.create(device, commandCharacteristic, stateCharacteristic, encrypter, driver);
             break;
         }

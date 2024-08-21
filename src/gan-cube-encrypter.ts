@@ -84,12 +84,20 @@ class GanGen3CubeEncrypter extends GanGen2CubeEncrypter {
     /** 101 its just the same */
 }
 
+/**
+ * Implementation for encryption scheme used in the GAN Gen3 cubes
+ */
+class GanGen4CubeEncrypter extends GanGen2CubeEncrypter {
+    /** amazing, it's still the same */
+}
+
 export type {
     GanCubeEncrypter
 };
 
 export {
     GanGen2CubeEncrypter,
-    GanGen3CubeEncrypter
+    GanGen3CubeEncrypter,
+    GanGen4CubeEncrypter
 };
 

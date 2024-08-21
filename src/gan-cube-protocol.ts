@@ -123,13 +123,15 @@ type GanCubeBatteryEvent = {
 type GanCubeHardwareEvent = {
     type: "HARDWARE";
     /** Internal cube hardware device model name */
-    hardwareName: string;
+    hardwareName?: string;
     /** Software/Firmware version of the cube */
-    softwareVersion: string;
+    softwareVersion?: string;
     /** Hardware version of the cube */
-    hardwareVersion: string;
+    hardwareVersion?: string;
+    /** Production Date of the cube */
+    productDate?: string;
     /** Is gyroscope supported by this cube model */
-    gyroSupported: boolean;
+    gyroSupported?: boolean;
 };
 
 /**
@@ -778,6 +780,343 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
 
 }
 
+/**
+ * Driver implementation for GAN Gen4 protocol, supported cubes:
+ *  - GAN12 ui Maglev
+ *  - GAN14 ui FreePlay
+ */
+class GanGen4ProtocolDriver implements GanProtocolDriver {
+
+    private serial: number = -1;
+    private lastSerial: number = -1;
+    private lastLocalTimestamp: number | null = null;
+    private moveBuffer: GanCubeEvent[] = [];
+
+    // Used to store partial result acquired from hardware info events
+    private hwInfo: { [key: number]: string } = {};
+
+    createCommandMessage(command: GanCubeCommand): Uint8Array | undefined {
+        var msg: Uint8Array | undefined = new Uint8Array(20).fill(0);
+        switch (command.type) {
+            case 'REQUEST_FACELETS':
+                msg.set([0xDD, 0x04, 0x00, 0xED, 0x00, 0x00]);
+                break;
+            case 'REQUEST_HARDWARE':
+                this.hwInfo = {};
+                msg.set([0xDF, 0x03, 0x00, 0x00, 0x00]);
+                break;
+            case 'REQUEST_BATTERY':
+                msg.set([0xDD, 0x04, 0x00, 0xEF, 0x00, 0x00]);
+                break;
+            case 'REQUEST_RESET':
+                msg.set([0xD2, 0x0D, 0x05, 0x39, 0x77, 0x00, 0x00, 0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0x00, 0x00, 0x00]);
+                break;
+            default:
+                msg = undefined;
+        }
+        return msg;
+    }
+
+    /** Private cube command for requesting move history */
+    private async requestMoveHistory(conn: GanCubeRawConnection, serial: number, count: number): Promise<void> {
+        var msg = new Uint8Array(20).fill(0);
+        // Move history response data is byte-aligned, and moves always starting with near-ceil odd serial number, regardless of requested.
+        // Adjust serial and count to get odd serial aligned history window with even number of moves inside.
+        if (serial % 2 == 0)
+            serial = (serial - 1) & 0xFF;
+        if (count % 2 == 1)
+            count++;
+        // Never overflow requested history window beyond the serial number cycle edge 255 -> 0.
+        // Because due to firmware bug the moves beyond the edge will be spoofed with 'D' (just zero bytes).
+        count = Math.min(count, serial + 1);
+        msg.set([0xD1, 0x04, serial, 0, count, 0]);
+        return conn.sendCommandMessage(msg).catch(() => {
+            // We can safely suppress and ignore possible GATT write errors, requestMoveHistory command is automatically retried on next move event
+        });
+    }
+
+    /**
+     * Evict move events from FIFO buffer until missing move event detected
+     * In case of missing move, and if connection is provided, submit request for move history to fill gap in buffer
+     */
+    private async evictMoveBuffer(conn?: GanCubeRawConnection): Promise<Array<GanCubeEvent>> {
+        var evictedEvents: GanCubeEvent[] = [];
+        while (this.moveBuffer.length > 0) {
+            let bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
+            let diff = this.lastSerial == -1 ? 1 : (bufferHead.serial - this.lastSerial) & 0xFF;
+            if (diff > 1) {
+                if (conn) {
+                    await this.requestMoveHistory(conn, bufferHead.serial, diff);
+                }
+                break;
+            } else {
+                evictedEvents.push(this.moveBuffer.shift()!);
+                this.lastSerial = bufferHead.serial;
+            }
+        }
+        // Probably something went wrong and buffer is no longer evicted, so forcibly disconnect the cube
+        if (conn && this.moveBuffer.length > 16) {
+            conn.disconnect();
+        }
+        return evictedEvents;
+    }
+
+    /**
+     * Check if circular serial number (modulo 256) fits into (start,end) serial number range.
+     * By default range is open, set closedStart / closedEnd to make it closed.
+     */
+    private isSerialInRange(start: number, end: number, serial: number, closedStart = false, closedEnd = false) {
+        return ((end - start) & 0xFF) >= ((serial - start) & 0xFF)
+            && (closedStart || ((start - serial) & 0xFF) > 0)
+            && (closedEnd || ((end - serial) & 0xFF) > 0);
+    }
+
+    /** Used to inject missed moves to FIFO buffer */
+    private injectMissedMoveToBuffer(move: GanCubeEvent) {
+        if (move.type == "MOVE") {
+            if (this.moveBuffer.length > 0) {
+                var bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
+                // Skip if move event with the same serial already in the buffer
+                if (this.moveBuffer.some(e => e.type == "MOVE" && e.serial == move.serial))
+                    return;
+                // Skip if move serial does not fit in range between last evicted event and event on buffer head, i.e. event must be one of missed
+                if (!this.isSerialInRange(this.lastSerial, bufferHead.serial, move.serial))
+                    return;
+                // Move history events should be injected in reverse order, so just put suitable event on buffer head
+                if (move.serial == ((bufferHead.serial - 1) & 0xFF)) {
+                    this.moveBuffer.unshift(move);
+                }
+            } else {
+                // This case happens when lost move is recovered using periodic 
+                // facelets state event, and being inserted into the empty buffer.
+                if (this.isSerialInRange(this.lastSerial, this.serial, move.serial, false, true)) {
+                    this.moveBuffer.unshift(move);
+                }
+            }
+        }
+    }
+
+    /** Used in response to periodic facelets event to check if any moves missed */
+    private async checkIfMoveMissed(conn: GanCubeRawConnection) {
+        let diff = (this.serial - this.lastSerial) & 0xFF;
+        if (diff > 0) {
+            if (this.serial != 0) { // Constraint to avoid firmware bug with facelets state event at 255 move counter
+                let bufferHead = this.moveBuffer[0] as GanCubeMoveEvent;
+                let startSerial = bufferHead ? bufferHead.serial : (this.serial + 1) & 0xFF;
+                await this.requestMoveHistory(conn, startSerial, diff + 1);
+            }
+        }
+    }
+
+    async handleStateEvent(conn: GanCubeRawConnection, eventMessage: Uint8Array): Promise<GanCubeEvent[]> {
+
+        var timestamp = now();
+
+        var cubeEvents: GanCubeEvent[] = [];
+        var msg = new GanProtocolMessageView(eventMessage);
+
+        var eventType = msg.getBitWord(0, 8);
+        var dataLength = msg.getBitWord(8, 8);
+
+        if (eventType == 0x01) { // MOVE
+
+            if (this.lastSerial != -1) { // Accept move events only after first facelets state event received
+
+                if (!Math.trunc(Math.random() * 5))  // DEBUG
+                    return cubeEvents;
+
+                this.lastLocalTimestamp = timestamp;
+                let cubeTimestamp = msg.getBitWord(16, 32, true);
+                let serial = this.serial = msg.getBitWord(48, 16, true);
+
+                let direction = msg.getBitWord(64, 2);
+                let face = [2, 32, 8, 1, 16, 4].indexOf(msg.getBitWord(66, 6));
+                let move = "URFDLB".charAt(face) + " '".charAt(direction);
+
+                // put move event into FIFO buffer
+                if (face >= 0) {
+                    this.moveBuffer.push({
+                        type: "MOVE",
+                        serial: serial,
+                        timestamp: timestamp,
+                        localTimestamp: timestamp,
+                        cubeTimestamp: cubeTimestamp,
+                        face: face,
+                        direction: direction,
+                        move: move.trim()
+                    });
+                }
+
+                // evict move events from FIFO buffer
+                cubeEvents = await this.evictMoveBuffer(conn);
+
+            }
+
+        } else if (eventType == 0xD1) { // MOVE_HISTORY
+
+            let startSerial = msg.getBitWord(16, 8);
+            let count = (dataLength - 1) * 2;
+
+            // inject missed moves into FIFO buffer
+            for (let i = 0; i < count; i++) {
+                let face = [1, 5, 3, 0, 4, 2].indexOf(msg.getBitWord(24 + 4 * i, 3));
+                let direction = msg.getBitWord(27 + 4 * i, 1);
+                if (face >= 0) {
+                    let move = "URFDLB".charAt(face) + " '".charAt(direction);
+                    this.injectMissedMoveToBuffer({
+                        type: "MOVE",
+                        serial: (startSerial - i) & 0xFF,
+                        timestamp: timestamp,
+                        localTimestamp: null, // Missed and recovered events has no meaningfull local timestamps
+                        cubeTimestamp: null,  // Cube hardware timestamp for missed move you should interpolate using cubeTimestampLinearFit
+                        face: face,
+                        direction: direction,
+                        move: move.trim()
+                    });
+                }
+            }
+
+            // evict move events from FIFO buffer
+            cubeEvents = await this.evictMoveBuffer();
+
+        } else if (eventType == 0xED) { // FACELETS
+
+            let serial = this.serial = msg.getBitWord(16, 16, true);
+
+            // Also check and recovery missed moves using periodic facelets event sent by cube
+            if (this.lastSerial != -1) {
+                // Debounce the facelet event if there are active cube moves
+                if (this.lastLocalTimestamp != null && (timestamp - this.lastLocalTimestamp) > 500) {
+                    await this.checkIfMoveMissed(conn);
+                }
+            }
+
+            if (this.lastSerial == -1)
+                this.lastSerial = serial;
+
+            // Corner/Edge Permutation/Orientation
+            let cp: Array<number> = [];
+            let co: Array<number> = [];
+            let ep: Array<number> = [];
+            let eo: Array<number> = [];
+
+            // Corners
+            for (let i = 0; i < 7; i++) {
+                cp.push(msg.getBitWord(32 + i * 3, 3));
+                co.push(msg.getBitWord(53 + i * 2, 2));
+            }
+            cp.push(28 - sum(cp));
+            co.push((3 - (sum(co) % 3)) % 3);
+
+            // Edges
+            for (let i = 0; i < 11; i++) {
+                ep.push(msg.getBitWord(69 + i * 4, 4));
+                eo.push(msg.getBitWord(113 + i, 1));
+            }
+            ep.push(66 - sum(ep));
+            eo.push((2 - (sum(eo) % 2)) % 2);
+
+            cubeEvents.push({
+                type: "FACELETS",
+                serial: serial,
+                timestamp: timestamp,
+                facelets: toKociembaFacelets(cp, co, ep, eo),
+                state: {
+                    CP: cp,
+                    CO: co,
+                    EP: ep,
+                    EO: eo
+                },
+            });
+
+        } else if (eventType >= 0xFA && eventType <= 0xFE) { // HARDWARE
+
+            switch (eventType) {
+                case 0xFA: // Product Date
+                    let year = msg.getBitWord(24, 16, true);
+                    let month = msg.getBitWord(40, 8);
+                    let day = msg.getBitWord(48, 8);
+                    this.hwInfo[eventType] = `${year.toString().padStart(4, '0')}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+                    break;
+                case 0xFC: // Hardware Name
+                    this.hwInfo[eventType] = '';
+                    for (var i = 0; i < dataLength - 1; i++) {
+                        this.hwInfo[eventType] += String.fromCharCode(msg.getBitWord(i * 8 + 24, 8));
+                    }
+                    break;
+                case 0xFD: // Software Version
+                    let swMajor = msg.getBitWord(24, 4);
+                    let swMinor = msg.getBitWord(28, 4);
+                    this.hwInfo[eventType] = `${swMajor}.${swMinor}`;
+                    break;
+                case 0xFE: // Hardware Version
+                    let hwMajor = msg.getBitWord(24, 4);
+                    let hwMinor = msg.getBitWord(28, 4);
+                    this.hwInfo[eventType] = `${hwMajor}.${hwMinor}`;
+                    break;
+            }
+
+            if (Object.keys(this.hwInfo).length == 4) { // All fields are populated
+                cubeEvents.push({
+                    type: "HARDWARE",
+                    timestamp: timestamp,
+                    hardwareName: this.hwInfo[0xFC],
+                    hardwareVersion: this.hwInfo[0xFE],
+                    softwareVersion: this.hwInfo[0xFD],
+                    productDate: this.hwInfo[0xFA],
+                    gyroSupported: ['GAN12uiM'].indexOf(this.hwInfo[0xFC]) != -1
+                });
+            }
+
+        } else if (eventType == 0xEC) { // GYRO
+
+            // Orientation Quaternion
+            let qw = msg.getBitWord(16, 16);
+            let qx = msg.getBitWord(32, 16);
+            let qy = msg.getBitWord(48, 16);
+            let qz = msg.getBitWord(64, 16);
+
+            // Angular Velocity
+            let vx = msg.getBitWord(80, 4);
+            let vy = msg.getBitWord(84, 4);
+            let vz = msg.getBitWord(88, 4);
+
+            cubeEvents.push({
+                type: "GYRO",
+                timestamp: timestamp,
+                quaternion: {
+                    x: (1 - (qx >> 15) * 2) * (qx & 0x7FFF) / 0x7FFF,
+                    y: (1 - (qy >> 15) * 2) * (qy & 0x7FFF) / 0x7FFF,
+                    z: (1 - (qz >> 15) * 2) * (qz & 0x7FFF) / 0x7FFF,
+                    w: (1 - (qw >> 15) * 2) * (qw & 0x7FFF) / 0x7FFF
+                },
+                velocity: {
+                    x: (1 - (vx >> 3) * 2) * (vx & 0x7),
+                    y: (1 - (vy >> 3) * 2) * (vy & 0x7),
+                    z: (1 - (vz >> 3) * 2) * (vz & 0x7)
+                }
+            });
+
+        } else if (eventType == 0xEF) { // BATTERY
+
+            let batteryLevel = msg.getBitWord(24, 8);
+
+            cubeEvents.push({
+                type: "BATTERY",
+                timestamp: timestamp,
+                batteryLevel: Math.min(batteryLevel, 100)
+            });
+
+        } else if (eventType == 0xEA) { // DISCONNECT
+            conn.disconnect();
+        }
+
+        return cubeEvents;
+
+    }
+
+}
+
 export type {
     BluetoothDeviceWithMAC,
     GanCubeConnection,
@@ -790,6 +1129,7 @@ export type {
 export {
     GanCubeClassicConnection,
     GanGen2ProtocolDriver,
-    GanGen3ProtocolDriver
+    GanGen3ProtocolDriver,
+    GanGen4ProtocolDriver
 };
 

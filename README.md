@@ -99,6 +99,9 @@ Supported Smart Cube devices:
 - MoYu AI 2023 (this cube uses GAN Gen2 protocol)
 - GAN Gen3 protocol smart cubes:
   - GAN356 i Carry 2
+- GAN Gen4 protocol smart cubes:
+  - GAN12 ui Maglev
+  - GAN14 ui FreePlay
 
 Sample application how to use this library with GAN Smart Cubes can be found here:
 - https://github.com/afedotov/gan-cube-sample
