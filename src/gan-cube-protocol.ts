@@ -922,9 +922,6 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
 
             if (this.lastSerial != -1) { // Accept move events only after first facelets state event received
 
-                if (!Math.trunc(Math.random() * 5))  // DEBUG
-                    return cubeEvents;
-
                 this.lastLocalTimestamp = timestamp;
                 let cubeTimestamp = msg.getBitWord(16, 32, true);
                 let serial = this.serial = msg.getBitWord(48, 16, true);
