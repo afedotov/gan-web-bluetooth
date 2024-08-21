@@ -1,6 +1,6 @@
 {
   "name": "gan-web-bluetooth",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Library for interaction with GAN Smart Timers and GAN Smart Cubes using Web Bluetooth API",
   "private": false,
   "types": "./dist/types/index.d.ts",
