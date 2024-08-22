@@ -1096,7 +1096,7 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
 
         } else if (eventType == 0xEF) { // BATTERY
 
-            let batteryLevel = msg.getBitWord(24, 8);
+            let batteryLevel = msg.getBitWord(8 + dataLength * 8, 8);
 
             cubeEvents.push({
                 type: "BATTERY",
