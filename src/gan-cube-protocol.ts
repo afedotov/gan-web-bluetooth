@@ -296,7 +296,7 @@ class GanProtocolMessageView {
             let dv = new DataView(buf.buffer);
             return bitLength == 16 ? dv.getUint16(0, littleEndian) : dv.getUint32(0, littleEndian);
         } else {
-            throw new Error('Unsupproted bit word length');
+            throw new Error('Unsupported bit word length');
         }
     }
 
