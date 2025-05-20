@@ -77,10 +77,10 @@ type MacAddressProvider = (device: BluetoothDevice, isFallbackCall?: boolean) =>
  * @param customMacAddressProvider Optional custom provider for cube MAC address
  * @returns Object representing connection API and state
  */
-async function connectGanCube(customMacAddressProvider?: MacAddressProvider): Promise<GanCubeConnection> {
+async function connectGanCube(customMacAddressProvider?: MacAddressProvider, bluetoothDevice?: BluetoothDevice): Promise<GanCubeConnection> {
 
     // Request user for the bluetooth device (popup selection dialog)
-    var device: BluetoothDeviceWithMAC = await navigator.bluetooth.requestDevice(
+    var device: BluetoothDeviceWithMAC = bluetoothDevice ? bluetoothDevice : await navigator.bluetooth.requestDevice(
         {
             filters: [
                 { namePrefix: "GAN" },
