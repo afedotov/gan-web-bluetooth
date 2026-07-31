@@ -132,9 +132,10 @@ async function connectGanCube(customMacAddressProvider?: MacAddressProvider): Pr
         } else if (serviceUUID == def.GAN_GEN4_SERVICE) {
             let commandCharacteristic = await service.getCharacteristic(def.GAN_GEN4_COMMAND_CHARACTERISTIC);
             let stateCharacteristic = await service.getCharacteristic(def.GAN_GEN4_STATE_CHARACTERISTIC);
-            let key = def.GAN_ENCRYPTION_KEYS[0];
+            let is2x2 = device.name?.startsWith('GAN251') ?? false;
+            let key = is2x2 ? def.GAN_ENCRYPTION_KEYS[2] : def.GAN_ENCRYPTION_KEYS[0];
             let encrypter = new GanGen4CubeEncrypter(new Uint8Array(key.key), new Uint8Array(key.iv), salt);
-            let driver = new GanGen4ProtocolDriver();
+            let driver = new GanGen4ProtocolDriver(is2x2);
             conn = await GanCubeClassicConnection.create(device, commandCharacteristic, stateCharacteristic, encrypter, driver);
             break;
         }
