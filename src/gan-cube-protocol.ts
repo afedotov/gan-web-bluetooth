@@ -787,6 +787,7 @@ class GanGen3ProtocolDriver implements GanProtocolDriver {
  */
 class GanGen4ProtocolDriver implements GanProtocolDriver {
 
+    private is2x2: boolean;
     private serial: number = -1;
     private lastSerial: number = -1;
     private lastLocalTimestamp: number | null = null;
@@ -794,6 +795,10 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
 
     // Used to store partial result acquired from hardware info events
     private hwInfo: { [key: number]: string } = {};
+
+    constructor(is2x2: boolean = false) {
+        this.is2x2 = is2x2;
+    }
 
     createCommandMessage(command: GanCubeCommand): Uint8Array | undefined {
         var msg: Uint8Array | undefined = new Uint8Array(20).fill(0);
@@ -1005,13 +1010,20 @@ class GanGen4ProtocolDriver implements GanProtocolDriver {
             cp.push(28 - sum(cp));
             co.push((3 - (sum(co) % 3)) % 3);
 
-            // Edges
-            for (let i = 0; i < 11; i++) {
-                ep.push(msg.getBitWord(69 + i * 4, 4));
-                eo.push(msg.getBitWord(113 + i, 1));
+            // Edges (2x2 sends dummy edge data, use solved state instead)
+            if (this.is2x2) {
+                for (let i = 0; i < 12; i++) {
+                    ep.push(i);
+                    eo.push(0);
+                }
+            } else {
+                for (let i = 0; i < 11; i++) {
+                    ep.push(msg.getBitWord(69 + i * 4, 4));
+                    eo.push(msg.getBitWord(113 + i, 1));
+                }
+                ep.push(66 - sum(ep));
+                eo.push((2 - (sum(eo) % 2)) % 2);
             }
-            ep.push(66 - sum(ep));
-            eo.push((2 - (sum(eo) % 2)) % 2);
 
             cubeEvents.push({
                 type: "FACELETS",
